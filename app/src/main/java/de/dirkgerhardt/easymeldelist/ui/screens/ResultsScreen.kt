@@ -13,20 +13,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import de.dirkgerhardt.easymeldelist.data.MeldeEntry
-import de.dirkgerhardt.easymeldelist.data.MeldelistParser
-import de.dirkgerhardt.easymeldelist.data.MeldelistRepository
-import de.dirkgerhardt.easymeldelist.data.SavedResultsRepository
+import de.dirkgerhardt.easymeldelist.data.*
+import de.dirkgerhardt.easymeldelist.ui.components.ChanceAnzeige
 import de.dirkgerhardt.easymeldelist.util.enc
+import de.dirkgerhardt.easymeldelist.util.urlEncode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
     navController: NavController,
-    fileName: String,
+    fileName: String,      // ← hier definiert
     nachname: String,
     vorname: String,
     verein: String?
@@ -38,17 +42,44 @@ fun ResultsScreen(
 
     var entries by remember { mutableStateOf<List<MeldeEntry>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var saved by remember { mutableStateOf(false) }
     var showDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(fileName, nachname, vorname) {
+    var wettkampfFeld by remember { mutableStateOf<Map<Int, List<RivalenZeit>>>(emptyMap()) }
+    var chancenCache by remember { mutableStateOf<Map<Int, ChancenInfo>>(emptyMap()) }
+
+    LaunchedEffect(fileName, nachname, vorname, verein) {
+        android.util.Log.d("SEARCH_DEBUG", "fileName='$fileName' nachname='$nachname' vorname='$vorname' verein='$verein'")
+        val feld = HashMap<Int, MutableList<RivalenZeit>>()
         entries = try {
             error = null
-            parser.findSwimmer(repository.open(fileName), nachname, vorname, verein)
+            parser.findSwimmer(
+                repository.open(fileName), nachname, vorname, verein
+            ) { wk, lauf, jahrgang, zeitMs, name ->
+                val isOwn = name.contains("$nachname,", ignoreCase = true) &&
+                        name.contains(vorname, ignoreCase = true)
+                if (!isOwn) {
+                    val list = feld[wk]
+                    if (list == null) {
+                        feld[wk] = mutableListOf(RivalenZeit(jahrgang, zeitMs))
+                    } else {
+                        list.add(RivalenZeit(jahrgang, zeitMs))
+                    }
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("EasyMeldelist", "Suche fehlgeschlagen", e)
             error = e.message
             emptyList()
+        }
+        wettkampfFeld = feld
+
+        val geladen = entries.orEmpty()
+        chancenCache = if (geladen.isEmpty()) {
+            emptyMap()
+        } else {
+            withContext(Dispatchers.Default) {
+                MedalEstimator.chancenInfoBerechnen(geladen, feld)
+            }
         }
     }
 
@@ -69,7 +100,7 @@ fun ResultsScreen(
                 Button(
                     onClick = {
                         showDialog = false
-                        navController.navigate("saved/${enc(fileName)}") {
+                        navController.navigate("saved/${urlEncode(fileName)}") {
                             popUpTo("home") { inclusive = false }
                         }
                     },
@@ -80,7 +111,6 @@ fun ResultsScreen(
                 OutlinedButton(
                     onClick = {
                         showDialog = false
-                        saved = true
                         navController.popBackStack()
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -125,24 +155,41 @@ fun ResultsScreen(
                         )
                     }
 
-                    items(result) { entry ->
-                        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp)) {
+                    result.groupBy { it.tag }.forEach { (tag, tagEntries) ->
+                        if (tag > 0) {
+                            item {
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
-                                    "Wettkampf ${entry.wettkampf} – ${entry.distanz}m ${entry.schwimmartAusgeschrieben}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary
+                                    "Tag $tag",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(vertical = 8.dp)
                                 )
-                                Text(
-                                    "Lauf ${entry.lauf} – Bahn ${entry.bahn}",
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                                entry.zeit?.let { zeit ->
+                            }
+                        }
+
+                        items(tagEntries) { entry ->
+                            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(16.dp)) {
                                     Text(
-                                        "Meldezeit: $zeit",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        "Wettkampf ${entry.wettkampf} – ${entry.distanz}m ${entry.schwimmartAusgeschrieben}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
+
+                                    Text(
+                                        "Lauf ${entry.lauf} – Bahn ${entry.bahn}",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                    entry.zeit?.let { zeit ->
+                                        Text(
+                                            "Meldezeit: $zeit",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    ChanceAnzeige(chancenCache[entry.wettkampf])
                                 }
                             }
                         }
@@ -165,9 +212,9 @@ fun ResultsScreen(
                                             fileName,
                                             "$nachname, $vorname",
                                             verein,
-                                            result
+                                            result,
+                                            wettkampfFeld
                                         )
-                                        saved = true
                                         showDialog = true
                                     },
                                     modifier = Modifier.weight(1f)
@@ -201,7 +248,7 @@ fun ResultsScreen(
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                "Bitte warten…",
+                                "Berechne Medaillenchancen...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

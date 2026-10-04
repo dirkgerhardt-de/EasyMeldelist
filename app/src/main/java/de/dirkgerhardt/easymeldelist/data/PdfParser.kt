@@ -5,19 +5,6 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Eine gefundene Meldung eines Schwimmers. */
-data class MeldeEntry(
-    val name: String,
-    val wettkampf: Int,
-    val lauf: Int,
-    val bahn: Int,
-    val distanz: Int,
-    val schwimmart: String,
-    val zeit: String?,        // z. B. "01:12,43"; null wenn nicht vorhanden
-    val verein: String
-)
-
-/** Ein Teilnehmer mit Name und Verein (für die Autovervollständigung). */
 data class Participant(
     val nachname: String,
     val vorname: String,
@@ -47,6 +34,9 @@ class MeldelistParser {
         """^Bahn\s+(\d+)\s+(.+?)\s+(\d{4})\s+(.+?)\s+(\d\d:\d\d,\d{2})"""
     )
 
+    // Tag-Erkennung: "Tag 1", "Tag 2", "Samstag", "Sonntag", Datumsmuster
+    private val tagRegex = Regex("""(?:Tag\s*[12]|Samstag|Sonntag|(?:\d{2}\.\d{2}\.\d{2,4}))""")
+
     private val styleMap = mapOf(
         "Freistil" to "F", "Brust" to "B", "Rücken" to "R",
         "Schmetterling" to "S", "Lagen" to "L"
@@ -66,6 +56,16 @@ class MeldelistParser {
             stripper.getText(document).lineSequence()
                 .map { it.trim() }.filter { it.isNotEmpty() }.toList()
         }
+
+    /** Bestimmt den Tag aus einer Textzeile (1, 2, oder 0 = unbekannt). */
+    private fun bestimmeTagZeile(line: String): Int {
+        val lower = line.lowercase()
+        return when {
+            "samstag" in lower || "stag 1" in lower || "tag 1" in lower || "stag" in lower -> 1
+            "sonntag" in lower || "stag 2" in lower || "tag 2" in lower -> 2
+            else -> 0
+        }
+    }
 
     /**
      * Analysiert eine Meldeliste in EINEM Durchlauf:
@@ -104,19 +104,35 @@ class MeldelistParser {
             MeldelistAnalysis(eventName, clubs.toList(), participants)
         }
 
-    /** Die Personensuche: alle Meldungen eines Schwimmers, optional nach Verein gefiltert. */
+    /**
+     * Die Personensuche: alle Meldungen eines Schwimmers, optional nach
+     * Verein gefiltert. Über [onHeatEntry] werden zusätzlich ALLE
+     * Meldezeiten eines Laufs gemeldet (für die Medaillenchance-Berechnung).
+     */
     suspend fun findSwimmer(
         input: java.io.InputStream,
         nachname: String,
         vorname: String,
-        verein: String? = null
+        verein: String? = null,
+        onHeatEntry: ((wettkampf: Int, lauf: Int, jahrgang: Int, zeitMs: Long, name: String) -> Unit)? = null
     ): List<MeldeEntry> = withContext(Dispatchers.IO) {
         val searchName = "$nachname, $vorname"
+        android.util.Log.d("SEARCH_DEBUG", "searchName='$searchName', verein='$verein'")
         val entries = mutableListOf<MeldeEntry>()
         var wk = 0; var distanz = 0; var art = ""; var lauf = 0
+        var aktuellesTag = 0               // aktueller Tag aus Kontext
 
         readLines(input).forEach { line ->
             val wkMatch = wettkampfRegex.find(line)
+
+            // NEU: Tag-Kontext aus der Zeile extrahieren (z.B. "Tag 1" in Header)
+            if (tagRegex.containsMatchIn(line)) {
+                val erkanntesTag = bestimmeTagZeile(line)
+                if (erkanntesTag > 0) {
+                    aktuellesTag = erkanntesTag
+                }
+            }
+
             when {
                 wkMatch != null -> {
                     wk = wkMatch.groupValues[1].toInt()
@@ -130,7 +146,19 @@ class MeldelistParser {
                 else -> bahnRegex.find(line)?.let { m ->
                     val name = m.groupValues[2].trim()
                     val club = m.groupValues[4].trim()
-                    val zeit = m.groupValues[5].takeIf { it.isNotBlank() }
+                    val jahrgang = m.groupValues[3].toInt()
+                    val zeit = m.groupValues[5]
+
+                    // NEU: Wenn kein expliziter Tag gesetzt, versuche ihn aus dem Namen zu ableiten
+                    // Oft steht am Anfang des Dokuments "Tag 1" oder "Samstag" in Überschriften
+                    val tag = aktuellesTag
+
+                    // Meldezeit an die Heat-Sammlung melden (für Medaillenchance)
+                    if (zeit.isNotBlank()) {
+                        MedalEstimator.parseZeitMs(zeit)?.let { ms ->
+                            onHeatEntry?.invoke(wk, lauf, jahrgang, ms, name)
+                        }
+                    }
 
                     if (isSameName(name, searchName) &&
                         (verein == null || club.contains(verein, ignoreCase = true))
@@ -143,12 +171,13 @@ class MeldelistParser {
                                 bahn = m.groupValues[1].toInt(),
                                 distanz = distanz,
                                 schwimmart = art,
-                                zeit = zeit,
-                                verein = club
+                                zeit = zeit.ifBlank { "" },
+                                verein = club,
+                                jahrgang = jahrgang,
+                                tag = tag
                             )
                         )
                     }
-                    android.util.Log.d("EasyMeldelist", "Zeile: '$line' -> Zeit: '${m.groupValues[5]}'")
                 }
             }
         }

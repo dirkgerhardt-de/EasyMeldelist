@@ -21,6 +21,7 @@ import de.dirkgerhardt.easymeldelist.data.MeldelistAnalysis
 import de.dirkgerhardt.easymeldelist.data.MeldelistParser
 import de.dirkgerhardt.easymeldelist.data.MeldelistRepository
 import de.dirkgerhardt.easymeldelist.util.enc
+import de.dirkgerhardt.easymeldelist.util.urlEncode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -264,8 +265,7 @@ fun UploadWizardScreen(
                 Button(
                     onClick = {
                         navController.navigate(
-                            "results/${enc(vm.importedFile!!)}/${enc(vm.nachname)}/${enc(vm.vorname)}" +
-                                    "/${vm.selectedClub?.let { enc(it) } ?: ""}"
+                            "results/${urlEncode(vm.importedFile ?: "")}/${urlEncode(vm.nachname)}/${urlEncode(vm.vorname)}/${urlEncode(vm.selectedClub ?: "")}"
                         )
                     },
                     enabled = vm.importedFile != null && vm.nachname.isNotBlank()

@@ -8,13 +8,12 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import de.dirkgerhardt.easymeldelist.ui.SavedParticipantsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.HomeScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.LibraryScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.ResultsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.SavedDetailScreen
-import de.dirkgerhardt.easymeldelist.ui.screens.SavedParticipantsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.UploadWizardScreen
-import de.dirkgerhardt.easymeldelist.util.dec
 
 class MainActivity : ComponentActivity() {
 
@@ -34,42 +33,34 @@ fun MeldelistNavGraph(vm: MeldelistViewModel) {
         composable("home") { HomeScreen(navController) }
         composable("library") { LibraryScreen(navController) }
         composable("upload") { UploadWizardScreen(navController, vm) }
-        composable(
-            route = "search/{fileName}"
-        ) { backStackEntry ->
+        composable("search/{fileName}") { backStackEntry ->
             UploadWizardScreen(
                 navController,
                 vm,
-                prefillFile = dec(backStackEntry.arguments?.getString("fileName"))
+                prefillFile = backStackEntry.arguments?.getString("fileName") ?: ""
             )
         }
-        composable(
-            route = "results/{fileName}/{nachname}/{vorname}/{verein}"
-        ) { backStackEntry ->
+        composable("results/{fileName}/{nachname}/{vorname}/{verein}") { backStackEntry ->
             ResultsScreen(
                 navController = navController,
-                fileName = dec(backStackEntry.arguments?.getString("fileName")),
-                nachname = dec(backStackEntry.arguments?.getString("nachname")),
-                vorname = dec(backStackEntry.arguments?.getString("vorname")),
-                verein = dec(backStackEntry.arguments?.getString("verein")).takeIf { it.isNotBlank() }
+                fileName = backStackEntry.arguments?.getString("fileName") ?: "",
+                nachname = backStackEntry.arguments?.getString("nachname") ?: "",
+                vorname = backStackEntry.arguments?.getString("vorname") ?: "",
+                verein = backStackEntry.arguments?.getString("verein")?.takeIf { it.isNotBlank() }
             )
         }
-        composable(
-            route = "saved/{fileName}"
-        ) { backStackEntry ->
+        composable("saved/{fileName}") { backStackEntry ->
             SavedParticipantsScreen(
-                navController,
-                dec(backStackEntry.arguments?.getString("fileName"))
+                navController = navController,
+                fileName = backStackEntry.arguments?.getString("fileName") ?: ""
             )
         }
-        composable(
-            route = "savedDetail/{fileName}/{participant}/{verein}"
-        ) { backStackEntry ->
+        composable("savedDetail/{fileName}/{name}/{verein}") { backStackEntry ->
             SavedDetailScreen(
-                navController,
-                dec(backStackEntry.arguments?.getString("fileName")),
-                dec(backStackEntry.arguments?.getString("participant")),
-                dec(backStackEntry.arguments?.getString("verein")).takeIf { it.isNotBlank() }
+                navController = navController,
+                fileName = backStackEntry.arguments?.getString("fileName") ?: "",
+                name = backStackEntry.arguments?.getString("name") ?: "",
+                verein = backStackEntry.arguments?.getString("verein") ?: ""
             )
         }
     }

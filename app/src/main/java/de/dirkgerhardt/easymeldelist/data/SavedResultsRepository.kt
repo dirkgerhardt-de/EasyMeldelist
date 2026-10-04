@@ -1,85 +1,179 @@
 package de.dirkgerhardt.easymeldelist.data
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-data class SavedParticipant(val name: String, val verein: String?)
+class SavedResultsRepository(private val context: Context) {
 
-/**
- * Speichert Suchergebnisse pro Meldeliste als JSON-Datei im
- * App-Speicher: filesDir/gespeichert/<pdfName>.json
- */
-class SavedResultsRepository(context: Context) {
+    private val dir: File
+        get() = File(context.filesDir, "gespeichert").apply { mkdirs() }
 
-    private val dir = File(context.filesDir, "gespeichert").apply { mkdirs() }
+    /** Normalisiert Namen/Dateinamen für robutes Vergleichen. */
+    private fun norm(s: String): String =
+        s.trim()
+            .replace("%2C", ",")
+            .replace("%20", " ")
+            .replace("+", " ")
+            .replace("\\s+".toRegex(), " ")
+            .lowercase()
 
-    private fun jsonFile(pdfFileName: String) =
-        File(dir, pdfFileName.removeSuffix(".pdf") + ".json")
+    /** Findet die gespeicherte Datei unabhängig von .json-Suffix und Sonderzeichen. */
+    private fun findeDatei(dateiName: String): File? {
+        val target = norm(dateiName.removeSuffix(".json"))
+        android.util.Log.d("SavedRepo", "Suche Datei für '$dateiName' (norm='$target')")
+        val treffer = dir.listFiles { f -> f.extension == "json" }
+            ?.firstOrNull { norm(it.nameWithoutExtension) == target }
+        android.util.Log.d("SavedRepo", "Treffer: ${treffer?.name ?: "KEINER"} — verfügbar: ${dir.listFiles()?.map { it.name }}")
+        return treffer
+    }
 
-    /** Speichert alle Meldungen eines Teilnehmers für eine Meldeliste. */
-    fun save(pdfFileName: String, participant: String, verein: String?, entries: List<MeldeEntry>) {
-        val file = jsonFile(pdfFileName)
-        val root = if (file.exists()) JSONObject(file.readText()) else JSONObject()
+    /** Speichert (oder aktualisiert) einen Teilnehmer samt Konkurrenzdaten in der JSON. */
+    fun save(
+        dateiName: String,
+        teilnehmerName: String,
+        verein: String?,
+        entries: List<MeldeEntry>,
+        feld: Map<Int, List<RivalenZeit>>
+    ) {
+        val file = findeDatei(dateiName) ?: File(dir, dateiName.replace("/", "_") + ".json")
 
-        val arr = JSONArray()
-        entries.forEach { e ->
-            arr.put(JSONObject().apply {
-                put("name", e.name)
-                put("wettkampf", e.wettkampf)
-                put("lauf", e.lauf)
-                put("bahn", e.bahn)
-                put("distanz", e.distanz)
-                put("schwimmart", e.schwimmart)
-                put("zeit", e.zeit ?: "")     // neu: Meldezeit
-                put("verein", e.verein)
-            })
+        val root = if (file.exists()) {
+            runCatching { JSONObject(file.readText()) }.getOrDefault(JSONObject())
+        } else JSONObject()
+
+        val participants = root.optJSONArray("participants") ?: org.json.JSONArray()
+        var pJson: JSONObject? = null
+        for (i in 0 until participants.length()) {
+            val p = participants.optJSONObject(i)
+            if (p != null && norm(p.optString("name")) == norm(teilnehmerName)) {
+                pJson = p
+                break
+            }
         }
-        root.put(participantKey(participant, verein), JSONObject().apply {
-            put("name", participant)
-            put("verein", verein ?: "")
-            put("entries", arr)
+        if (pJson == null) {
+            pJson = JSONObject()
+            participants.put(pJson)
+        }
+
+        pJson.put("name", teilnehmerName)
+        pJson.put("verein", verein ?: "")
+        pJson.put("entries", org.json.JSONArray().apply {
+            entries.forEach { e ->
+                put(org.json.JSONObject().apply {
+                    put("name", e.name)
+                    put("wettkampf", e.wettkampf)
+                    put("lauf", e.lauf)
+                    put("bahn", e.bahn)
+                    put("distanz", e.distanz)
+                    put("schwimmart", e.schwimmart)
+                    put("zeit", e.zeit)
+                    put("verein", e.verein)
+                    put("jahrgang", e.jahrgang)
+                    put("tag", e.tag)
+                })
+            }
         })
+        pJson.put("feld", org.json.JSONObject().apply {
+            feld.forEach { (wk, liste) ->
+                put(wk.toString(), org.json.JSONArray().apply {
+                    liste.forEach { r ->
+                        put(org.json.JSONObject().apply {
+                            put("jahrgang", r.jahrgang)
+                            put("zeitMs", r.zeitMs)
+                        })
+                    }
+                })
+            }
+        })
+
+        root.put("datei", dateiName)
+        root.put("participants", participants)
         file.writeText(root.toString())
+
+        android.util.Log.d("SavedRepo", "Gespeichert: ${file.name}, Teilnehmer='${teilnehmerName}', Entries=${entries.size}")
     }
 
-    /** Alle gespeicherten Teilnehmer einer Meldeliste. */
-    fun loadParticipants(pdfFileName: String): List<SavedParticipant> {
-        val file = jsonFile(pdfFileName)
-        if (!file.exists()) return emptyList()
-        val root = JSONObject(file.readText())
-        return root.keys().asSequence().map { key ->
-            val obj = root.getJSONObject(key)
-            SavedParticipant(
-                obj.getString("name"),
-                obj.optString("verein").takeIf { it.isNotBlank() }
-            )
-        }.sortedBy { it.name.lowercase() }.toList()
-    }
-
-    /** Gespeicherte Meldungen eines Teilnehmers. */
-    fun loadEntries(pdfFileName: String, participant: String, verein: String?): List<MeldeEntry> {
-        val file = jsonFile(pdfFileName)
-        if (!file.exists()) return emptyList()
-        val root = JSONObject(file.readText())
-        val obj = root.optJSONObject(participantKey(participant, verein)) ?: return emptyList()
-        val arr = obj.getJSONArray("entries")
-        return (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            MeldeEntry(
-                name = o.getString("name"),
-                wettkampf = o.getInt("wettkampf"),
-                lauf = o.getInt("lauf"),
-                bahn = o.getInt("bahn"),
-                distanz = o.getInt("distanz"),
-                schwimmart = o.getString("schwimmart"),
-                zeit = o.optString("zeit").takeIf { it.isNotBlank() },   // neu
-                verein = o.getString("verein")
+    /** Lädt alle gespeicherten Teilnehmer einer Datei. */
+    fun loadParticipants(dateiName: String): List<GespeicherterTeilnehmer> {
+        val file = findeDatei(dateiName) ?: return emptyList()
+        val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return emptyList()
+        val arr = root.optJSONArray("participants") ?: return emptyList()
+        val result = mutableListOf<GespeicherterTeilnehmer>()
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONObject(i) ?: continue
+            result.add(
+                GespeicherterTeilnehmer(
+                    name = p.optString("name"),
+                    verein = p.optString("verein").ifEmpty { null }
+                )
             )
         }
+        android.util.Log.d("SavedRepo", "loadParticipants('${dateiName}'): ${result.map { it.name }}")
+        return result
     }
 
-    private fun participantKey(participant: String, verein: String?) =
-        participant.lowercase() + "|" + (verein ?: "").lowercase()
+    private fun findeTeilnehmer(dateiName: String, name: String): JSONObject? {
+        val file = findeDatei(dateiName) ?: return null
+        val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return null
+        val arr = root.optJSONArray("participants") ?: return null
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONObject(i) ?: continue
+            val gespeichert = p.optString("name")
+            if (norm(gespeichert) == norm(name)) return p
+        }
+        android.util.Log.w("SavedRepo", "Teilnehmer '$name' nicht gefunden in '${dateiName}'. Vorhanden: ${(0 until arr.length()).mapNotNull { arr.optJSONObject(it)?.optString("name") }}")
+        return null
+    }
+
+    /** Lädt die Meldungen eines Teilnehmers. */
+    fun loadEntries(dateiName: String, name: String): List<MeldeEntry> {
+        val p = findeTeilnehmer(dateiName, name) ?: return emptyList()
+        val arr = p.optJSONArray("entries") ?: return emptyList()
+        val result = mutableListOf<MeldeEntry>()
+        for (i in 0 until arr.length()) {
+            val e = arr.optJSONObject(i) ?: continue
+            result.add(
+                MeldeEntry(
+                    name = e.optString("name"),
+                    wettkampf = e.optInt("wettkampf"),
+                    lauf = e.optInt("lauf"),
+                    bahn = e.optInt("bahn"),
+                    distanz = e.optInt("distanz"),
+                    schwimmart = e.optString("schwimmart"),
+                    zeit = e.optString("zeit"),
+                    verein = e.optString("verein"),
+                    jahrgang = e.optInt("jahrgang"),
+                    tag = e.optInt("tag")
+                )
+            )
+        }
+        android.util.Log.d("SavedRepo", "loadEntries('$name'): ${result.size} Einträge")
+        return result
+    }
+
+    /** Lädt das Konkurrenz-Feld eines Teilnehmers für die Chancen-Berechnung. */
+    fun loadFeld(dateiName: String, name: String): Map<Int, List<RivalenZeit>> {
+        val p = findeTeilnehmer(dateiName, name) ?: return emptyMap()
+        val feldJson = p.optJSONObject("feld") ?: return emptyMap()
+        val result = mutableMapOf<Int, List<RivalenZeit>>()
+        for (key in feldJson.keys()) {
+            val wk = key.toIntOrNull() ?: continue
+            val arr = feldJson.optJSONArray(key) ?: continue
+            val liste = mutableListOf<RivalenZeit>()
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                liste.add(RivalenZeit(jahrgang = r.optInt("jahrgang"), zeitMs = r.optLong("zeitMs")))
+            }
+            result[wk] = liste
+        }
+        android.util.Log.d("SavedRepo", "loadFeld('$name'): ${result.size} Wettkämpfe, ${result.values.sumOf { it.size }} Rivalen")
+        return result
+    }
+
+    /** Liste aller gespeicherten Dateien (für 'Meldelisten'-Übersicht). */
+    fun gespeicherteDateien(): List<String> =
+        dir.listFiles { f -> f.extension == "json" }
+            ?.map { it.nameWithoutExtension }
+            ?: emptyList()
 }

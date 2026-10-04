@@ -1,4 +1,4 @@
-package de.dirkgerhardt.easymeldelist.ui.screens
+package de.dirkgerhardt.easymeldelist.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,61 +13,84 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import de.dirkgerhardt.easymeldelist.data.MeldelistRepository
+import de.dirkgerhardt.easymeldelist.data.GespeicherterTeilnehmer
 import de.dirkgerhardt.easymeldelist.data.SavedResultsRepository
-import de.dirkgerhardt.easymeldelist.util.enc
+import de.dirkgerhardt.easymeldelist.util.urlEncode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SavedParticipantsScreen(navController: NavController, fileName: String) {
+fun SavedParticipantsScreen(
+    navController: NavController,
+    fileName: String
+) {
     val context = LocalContext.current
     val repo = remember { SavedResultsRepository(context) }
-    val meldelistRepo = remember { MeldelistRepository(context) }
-    val participants by remember { mutableStateOf(repo.loadParticipants(fileName)) }
+
+    var participants by remember { mutableStateOf<List<GespeicherterTeilnehmer>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(fileName) {
+        scope.launch {
+            val geladen = withContext(Dispatchers.IO) {
+                repo.loadParticipants(fileName)
+            }
+            participants = geladen
+            loading = false
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(meldelistRepo.displayName(fileName)) },
+                title = { Text("Gespeicherte Teilnehmer") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
                     }
                 }
             )
-        },
-        bottomBar = {
-            Button(
-                onClick = { navController.navigate("search/${enc(fileName)}") },
-                modifier = Modifier.fillMaxWidth().padding(16.dp)
-            ) { Text("Neue Suche") }
         }
     ) { padding ->
-        if (participants.isEmpty()) {
-            Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Noch keine Teilnehmer gespeichert.")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(participants) { p ->
-                    ElevatedCard(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            navController.navigate(
-                                "savedDetail/${enc(fileName)}/${enc(p.name)}/${enc(p.verein ?: "")}"
-                            )
-                        }
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(p.name, style = MaterialTheme.typography.titleSmall)
-                            p.verein?.let {
-                                Text(it, style = MaterialTheme.typography.bodySmall)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when {
+                loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+
+                participants.isEmpty() -> Text(
+                    "Keine gespeicherten Teilnehmer für diese Datei.",
+                    modifier = Modifier.align(Alignment.Center)
+                )
+
+                else -> LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(participants) { p ->
+                        ElevatedCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    navController.navigate(
+                                        "savedDetail/${urlEncode(fileName)}/${urlEncode(p.name)}/${urlEncode(p.verein ?: "")}"
+                                    )
+                                }
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(p.name, style = MaterialTheme.typography.titleSmall)
+                                p.verein?.takeIf { it.isNotBlank() }?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
