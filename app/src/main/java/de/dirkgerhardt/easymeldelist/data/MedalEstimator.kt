@@ -4,6 +4,10 @@ import java.util.Random
 
 object MedalEstimator {
 
+    const val MEDAILLE_SCHWELLE = 0.50          // Gesamtchance, ab der überhaupt eine Medaille gezeigt wird
+    const val PRIMAER_MEDAILLE_SCHWELLE = 0.50  // Eigenchance, ab der die primäre Medaille gezeigt wird (NEU)
+    const val ZWEITE_MEDAILLE_SCHWELLE = 0.20   // Mindestchance der besseren Medaille (NEU)
+
     fun parseZeitMs(zeit: String): Long? {
         val m = Regex("""^(\d{2}):(\d{2}),(\d{2})$""").find(zeit.trim()) ?: return null
         val (min, sek, hundert) = m.destructured
@@ -49,20 +53,36 @@ object MedalEstimator {
         )
     }
 
-    const val MEDAILLE_SCHWELLE = 0.50
-
     fun besteMedaille(chancen: MedaillenChancen): Medaille? {
         if (chancen.gesamt <= MEDAILLE_SCHWELLE) return null
-        return when {
-            chancen.gold >= chancen.gesamt * 0.30 -> Medaille.GOLD
-            chancen.silber >= chancen.gesamt * 0.30 -> Medaille.SILBER
-            chancen.bronze >= chancen.gesamt * 0.30 -> Medaille.BRONZE
-            else -> listOf(
-                chancen.gold to Medaille.GOLD,
-                chancen.silber to Medaille.SILBER,
-                chancen.bronze to Medaille.BRONZE
-            ).maxBy { it.first }.second
-        }
+
+        val optionen = listOf(
+            chancen.gold to Medaille.GOLD,
+            chancen.silber to Medaille.SILBER,
+            chancen.bronze to Medaille.BRONZE
+        )
+        // Alle Medaillen mit mind. 30%-Anteil an der Gesamtchance –
+        // falls keine das schafft, alle berücksichtigen
+        return optionen
+            .filter { it.first >= chancen.gesamt * 0.30 }
+            .ifEmpty { optionen }
+            .maxBy { it.first }
+            .second
+    }
+
+    /** Die zweitwahrscheinlichste Medaille (nur relevant, wenn es eine Erste gibt). */
+
+    fun zweiteMedaille(chancen: MedaillenChancen, beste: Medaille?): Medaille? {
+        if (beste == null) return null
+        // Nur BESSERE Medaillen anzeigen (nicht schlechtere!)
+        return listOf(
+            Medaille.GOLD to chancen.gold,
+            Medaille.SILBER to chancen.silber,
+            Medaille.BRONZE to chancen.bronze
+        )
+            .filter { it.first.ordinal < beste.ordinal && it.second >= ZWEITE_MEDAILLE_SCHWELLE }
+            .maxByOrNull { it.second }
+            ?.first
     }
 
     fun personalWertung(gesamt: Double, medaille: Medaille?, salt: Int = 0): String {
@@ -77,7 +97,7 @@ object MedalEstimator {
                 "Du bist der Geheimtipp",
                 "Für dieses Rennen bist du der Geheimtipp",
                 "Ein echter Geheimtipp heute",
-                "Das Feld kennt dich vielleicht noch nicht"
+                "Niemand hat dich auf dem Zettel, zeig was in dir steckt"
             )
             gesamt < 0.30 -> listOf(
                 "Du bist die Überraschungswaffe",
@@ -121,7 +141,7 @@ object MedalEstimator {
                 "Das Feld muss dich fürchten um",
                 "Praktisch niemand nimmt dir"
             )
-            else -> return "${medaille!!.name} ist zum Greifen nah"
+            else -> return "${medaille!!.displayName} ist zum Greifen nah"
         }
         return varianten[((salt % varianten.size) + varianten.size) % varianten.size]
     }
@@ -167,6 +187,7 @@ object MedalEstimator {
             result[entry.wettkampf] = ChancenInfo(
                 chancen = chancen,
                 medaille = medaille,
+                zweiteMedaille = zweiteMedaille(chancen, medaille),
                 text = personalWertung(chancen.gesamt, medaille, entry.wettkampf),
                 motivationsSpruch = if (chancen.gesamt <= 0.0)
                     motivationsSpruch(entry.wettkampf) else null

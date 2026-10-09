@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,7 +28,10 @@ fun SavedDetailScreen(
     verein: String
 ) {
     val context = LocalContext.current
+    val settingsRepo = remember { SettingsRepository(context) }
     val savedRepo = remember { SavedResultsRepository(context) }
+
+    val settings by SettingsRepository.settings.collectAsState()
 
     var entries by remember { mutableStateOf<List<MeldeEntry>?>(null) }
     var chancenCache by remember { mutableStateOf<Map<Int, ChancenInfo>>(emptyMap()) }
@@ -55,6 +59,11 @@ fun SavedDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate("settings") }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
                     }
                 }
             )
@@ -92,7 +101,6 @@ fun SavedDetailScreen(
                 result.groupBy { it.tag }.forEach { (tag, tagEntries) ->
                     if (tag > 0) {
                         item {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                             Text(
                                 "Tag $tag",
                                 style = MaterialTheme.typography.titleLarge,
@@ -123,7 +131,7 @@ fun SavedDetailScreen(
                                     )
                                 }
 
-                                ChanceAnzeige(chancenCache[entry.wettkampf])
+                                ChanceAnzeige(chancenCache[entry.wettkampf], entry.wettkampf, settings)
                             }
                         }
                     }
@@ -133,6 +141,7 @@ fun SavedDetailScreen(
     }
 }
 
+// Extension Property MUSS in dieser Datei stehen (file-private in Kotlin)
 private val MeldeEntry.schwimmartAusgeschrieben: String
     get() = when (schwimmart) {
         "F" -> "Freistil"

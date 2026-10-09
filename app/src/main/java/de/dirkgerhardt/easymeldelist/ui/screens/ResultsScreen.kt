@@ -13,24 +13,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import de.dirkgerhardt.easymeldelist.data.*
-import de.dirkgerhardt.easymeldelist.ui.components.ChanceAnzeige
-import de.dirkgerhardt.easymeldelist.util.enc
 import de.dirkgerhardt.easymeldelist.util.urlEncode
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
     navController: NavController,
-    fileName: String,      // ← hier definiert
+    fileName: String,
     nachname: String,
     vorname: String,
     verein: String?
@@ -45,7 +39,6 @@ fun ResultsScreen(
     var showDialog by remember { mutableStateOf(false) }
 
     var wettkampfFeld by remember { mutableStateOf<Map<Int, List<RivalenZeit>>>(emptyMap()) }
-    var chancenCache by remember { mutableStateOf<Map<Int, ChancenInfo>>(emptyMap()) }
 
     LaunchedEffect(fileName, nachname, vorname, verein) {
         android.util.Log.d("SEARCH_DEBUG", "fileName='$fileName' nachname='$nachname' vorname='$vorname' verein='$verein'")
@@ -72,15 +65,6 @@ fun ResultsScreen(
             emptyList()
         }
         wettkampfFeld = feld
-
-        val geladen = entries.orEmpty()
-        chancenCache = if (geladen.isEmpty()) {
-            emptyMap()
-        } else {
-            withContext(Dispatchers.Default) {
-                MedalEstimator.chancenInfoBerechnen(geladen, feld)
-            }
-        }
     }
 
     if (showDialog) {
@@ -129,6 +113,39 @@ fun ResultsScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            // Buttons immer sichtbar am unteren Rand – kein Scrollen nötig
+            Surface(tonalElevation = 3.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { navController.popBackStack() },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Abbrechen") }
+
+                    Button(
+                        onClick = {
+                            entries?.let { result ->
+                                savedRepo.save(
+                                    fileName,
+                                    "$nachname, $vorname",
+                                    verein,
+                                    result,
+                                    wettkampfFeld
+                                )
+                                showDialog = true
+                            }
+                        },
+                        enabled = entries?.isNotEmpty() == true,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Speichern") }
+                }
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
@@ -136,8 +153,8 @@ fun ResultsScreen(
                 null -> {}
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     item {
                         val headline = when {
@@ -158,7 +175,6 @@ fun ResultsScreen(
                     result.groupBy { it.tag }.forEach { (tag, tagEntries) ->
                         if (tag > 0) {
                             item {
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                                 Text(
                                     "Tag $tag",
                                     style = MaterialTheme.typography.titleLarge,
@@ -170,55 +186,18 @@ fun ResultsScreen(
 
                         items(tagEntries) { entry ->
                             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(16.dp)) {
+                                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                                     Text(
                                         "Wettkampf ${entry.wettkampf} – ${entry.distanz}m ${entry.schwimmartAusgeschrieben}",
-                                        style = MaterialTheme.typography.titleMedium,
+                                        style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
-
                                     Text(
                                         "Lauf ${entry.lauf} – Bahn ${entry.bahn}",
-                                        style = MaterialTheme.typography.bodyLarge
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    entry.zeit?.let { zeit ->
-                                        Text(
-                                            "Meldezeit: $zeit",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    ChanceAnzeige(chancenCache[entry.wettkampf])
                                 }
-                            }
-                        }
-                    }
-
-                    if (result.isNotEmpty()) {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { navController.popBackStack() },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Abbrechen") }
-
-                                Button(
-                                    onClick = {
-                                        savedRepo.save(
-                                            fileName,
-                                            "$nachname, $vorname",
-                                            verein,
-                                            result,
-                                            wettkampfFeld
-                                        )
-                                        showDialog = true
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) { Text("Speichern") }
                             }
                         }
                     }
@@ -246,11 +225,6 @@ fun ResultsScreen(
                                 "Lade Daten für\n$nachname, $vorname",
                                 style = MaterialTheme.typography.titleMedium,
                                 textAlign = TextAlign.Center
-                            )
-                            Text(
-                                "Berechne Medaillenchancen...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }

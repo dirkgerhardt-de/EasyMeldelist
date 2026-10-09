@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import de.dirkgerhardt.easymeldelist.data.GespeicherterTeilnehmer
 import de.dirkgerhardt.easymeldelist.data.SavedResultsRepository
+import de.dirkgerhardt.easymeldelist.util.enc
 import de.dirkgerhardt.easymeldelist.util.urlEncode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,6 +55,29 @@ fun SavedParticipantsScreen(
                     }
                 }
             )
+        },
+        bottomBar = {
+            Surface(shadowElevation = 8.dp) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Button(
+                        onClick = { navController.navigate("search/${enc(fileName)}") },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !loading
+                    ) {
+                        Icon(
+                            Icons.Filled.PersonAdd,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Teilnehmer hinzufügen")
+                    }
+                }
+            }
         }
     ) { padding ->
         Box(

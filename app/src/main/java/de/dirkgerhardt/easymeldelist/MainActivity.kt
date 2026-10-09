@@ -13,6 +13,7 @@ import de.dirkgerhardt.easymeldelist.ui.screens.HomeScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.LibraryScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.ResultsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.SavedDetailScreen
+import de.dirkgerhardt.easymeldelist.ui.screens.SettingsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.UploadWizardScreen
 
 class MainActivity : ComponentActivity() {
@@ -62,6 +63,9 @@ fun MeldelistNavGraph(vm: MeldelistViewModel) {
                 name = backStackEntry.arguments?.getString("name") ?: "",
                 verein = backStackEntry.arguments?.getString("verein") ?: ""
             )
+        }
+        composable("settings") {
+            SettingsScreen(navController)
         }
     }
 }
