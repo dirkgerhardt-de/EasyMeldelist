@@ -4,15 +4,26 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import de.dirkgerhardt.easymeldelist.data.AppSettings
 import de.dirkgerhardt.easymeldelist.data.AnzeigeModus
+import de.dirkgerhardt.easymeldelist.data.AppSettings
 import de.dirkgerhardt.easymeldelist.data.ChancenInfo
+import de.dirkgerhardt.easymeldelist.data.Medaille
+import de.dirkgerhardt.easymeldelist.data.MedalEstimator
 import kotlin.math.roundToInt
 
+/**
+ * Reine Anzeige der vorberechneten Chancen – identisch für
+ * Ergebnis-Screen und gespeicherte Ergebnisse.
+ *
+ * MEDAILLENCHANCEN-Modus:
+ * - Gesamt ≥ 50 %:  "🥈 Silber bei maximum Power – 🥉 Bronze ist stabil"
+ * - Gesamt < 50 %:  Motivationstext (wenn in Settings aktiviert), sonst nichts
+ *
+ * PRO-Modus:
+ * - Nur die exakten Prozentwerte, ohne Medaillen-Emoji
+ */
 @Composable
 fun ChanceAnzeige(
     info: ChancenInfo?,
@@ -22,104 +33,57 @@ fun ChanceAnzeige(
     if (info == null) {
         return
     }
-
     Spacer(Modifier.height(12.dp))
 
+    // ZENTRALE STELLE: Perspektive mit Schwelle und 0%-Filter berechnen
+    val perspektive = MedalEstimator.zweiteMedaille(
+        info.chancen,
+        info.medaille,
+        settings.perspektiveSchwelle
+    )
+
     when (settings.modus) {
-        AnzeigeModus.MOTIVATION -> zeigeMotivation(info)
-
         AnzeigeModus.MEDAILLENCHANCEN -> {
-            // Nur anzeigen wenn Medaille vorhanden ist (≥50%)
-            if (info.medaille == null) return
-
-            val text = nuechternerText(info, wettkampfNr)
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(info.medaille.emoji, fontSize = 28.sp, lineHeight = 32.sp)
-                info.zweiteMedaille?.let { zweite ->
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        zweite.emoji,
-                        fontSize = 20.sp,
-                        lineHeight = 32.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            if (info.medaille == null) {
+                // Keine Medaille (Gesamtchance < 50 %)
+                if (settings.motivationAnzeigen) {
+                    if (info.chancen.gesamt > 0.0) {
+                        Text(info.text, style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(
+                            info.motivationsSpruch ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+                // Motivation aus: nichts anzeigen
+                return
             }
+
+            // Medaille vorhanden: kombinierte Anzeige als ein Text
+            val text = nuechternerText(info, wettkampfNr, perspektive)
+            Text(text, style = MaterialTheme.typography.bodySmall)
         }
 
         AnzeigeModus.PRO -> {
             val prozentZeile = prozentZeile(info) ?: return
-
-            if (info.medaille == null) {
-                Text(prozentZeile, style = MaterialTheme.typography.bodySmall)
-            } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        prozentZeile,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(info.medaille.emoji, fontSize = 28.sp, lineHeight = 32.sp)
-                }
-            }
+            Text(prozentZeile, style = MaterialTheme.typography.bodySmall)
         }
-    }
-}
-
-@Composable
-private fun zeigeMotivation(info: ChancenInfo) {
-    if (info.medaille != null) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                info.text,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
-            Text(info.medaille.emoji, fontSize = 28.sp, lineHeight = 32.sp)
-        }
-    } else if (info.chancen.gesamt > 0.0) {
-        Text(info.text, style = MaterialTheme.typography.bodySmall)
-    } else {
-        Text(
-            info.motivationsSpruch ?: "",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
 /**
  * Nüchterner Text für den Medaillenchancen-Modus.
- * Nennt die wahrscheinlichste Medaille plus die nächsthöhere
- * als Perspektive ("bei maximum Power" etc.).
+ * Perspektive LINKS (Vision), Primär RECHTS (Basis).
+ * Format: "🥈 Silber bei maximum Power – 🥉 Bronze ist stabil"
  */
-private fun nuechternerText(info: ChancenInfo, salt: Int): String {
-    val (_, besteName) = listOf(
-        info.chancen.gold to "Gold",
-        info.chancen.silber to "Silber",
-        info.chancen.bronze to "Bronze"
-    ).maxByOrNull { it.first } ?: return ""
-
-    val naechsteHoehere = when (besteName) {
-        "Gold" -> null
-        "Silber" -> "Gold"
-        else -> "Silber"
-    }
+private fun nuechternerText(
+    info: ChancenInfo,
+    salt: Int,
+    perspektive: Medaille?
+): String {
+    val medaille = info.medaille ?: return ""
 
     val hauptPool = when {
         info.chancen.gesamt >= 0.70 -> listOf(
@@ -144,10 +108,12 @@ private fun nuechternerText(info: ChancenInfo, salt: Int): String {
     val idxHaupt = poolIndex(salt, streu, hauptPool.size)
     val idxSchluss = poolIndex(salt + 1, streu, schlussPool.size)
 
-    return if (naechsteHoehere != null) {
-        "$besteName ist ${hauptPool[idxHaupt]}, $naechsteHoehere ${schlussPool[idxSchluss]}"
+    return if (perspektive != null) {
+        "${perspektive.emoji} ${perspektive.displayName} ${schlussPool[idxSchluss]}" +
+                " – " +
+                "${medaille.emoji} ${medaille.displayName} ist ${hauptPool[idxHaupt]}"
     } else {
-        "$besteName ist ${hauptPool[idxHaupt]}"
+        "${medaille.emoji} ${medaille.displayName} ist ${hauptPool[idxHaupt]}"
     }
 }
 

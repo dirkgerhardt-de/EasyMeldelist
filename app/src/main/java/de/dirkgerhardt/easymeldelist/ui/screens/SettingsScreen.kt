@@ -49,13 +49,6 @@ fun SettingsScreen(navController: NavController) {
             )
 
             ModusOption(
-                titel = "Motivation",
-                beschreibung = "Sprüche wie »Geheimtipp« oder »Überraschungswaffe«",
-                selected = settings.modus == AnzeigeModus.MOTIVATION,
-                onClick = { repo.setModus(AnzeigeModus.MOTIVATION) }
-            )
-
-            ModusOption(
                 titel = "Medaillenchancen",
                 beschreibung = "Nüchterne Einschätzung plus wahrscheinlichste Medaille",
                 selected = settings.modus == AnzeigeModus.MEDAILLENCHANCEN,
@@ -68,6 +61,82 @@ fun SettingsScreen(navController: NavController) {
                 selected = settings.modus == AnzeigeModus.PRO,
                 onClick = { repo.setModus(AnzeigeModus.PRO) }
             )
+
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // Motivation bei geringer Gesamtchance (<50 %)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Motivation bei geringen Chancen",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Wenn keine realistische Medaillenchance besteht (<50 % Gesamt), " +
+                                    "wird stattdessen ein Motivationstext angezeigt.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.motivationAnzeigen,
+                        onCheckedChange = { repo.setMotivationAnzeigen(it) }
+                    )
+                }
+            }
+
+            Text(
+                "Perspektiv-Medaille",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        "Perspektive zeigen ab:",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+
+                    Slider(
+                        value = settings.perspektiveSchwelle.toFloat(),
+                        onValueChange = {
+                            repo.setPerspektiveSchwelle(it.toDouble())
+                        },
+                        valueRange = 0f..0.5f,
+                        steps = 9,  // 5 %-Intervalle: 0 %, 5 %, 10 %, ..., 50 %
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        "Mindest-Chance der BESSEREN Medaille, ab der sie als " +
+                                "Perspektive angezeigt wird.\n\n" +
+                                "Empfohlen: 20 % (empirische Schwelle)\n" +
+                                "Niedriger = öfter Perspektive (mehr Aufstiegs-Motivation)\n" +
+                                "Höher = konservativer (nur deutliche Aufstiegsmöglichkeiten)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
