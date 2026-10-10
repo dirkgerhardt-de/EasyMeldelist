@@ -22,7 +22,8 @@ import kotlin.math.roundToInt
  * - Gesamt < 50 %:  Motivationstext (wenn in Settings aktiviert), sonst nichts
  *
  * PRO-Modus:
- * - Nur die exakten Prozentwerte, ohne Medaillen-Emoji
+ * - IMMER alle exakten Prozentwerte (Gold, Silber, Bronze, Gesamt),
+ *   auch bei 0% – keine Filter, keine Unterdrückung.
  */
 @Composable
 fun ChanceAnzeige(
@@ -67,8 +68,7 @@ fun ChanceAnzeige(
         }
 
         AnzeigeModus.PRO -> {
-            val prozentZeile = prozentZeile(info) ?: return
-            Text(prozentZeile, style = MaterialTheme.typography.bodySmall)
+            Text(prozentZeile(info), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -117,14 +117,14 @@ private fun nuechternerText(
     }
 }
 
-private fun prozentZeile(info: ChancenInfo): String? {
-    val teile = mutableListOf<String>()
-    if (info.chancen.gold > 0.0) teile += "Gold ${(info.chancen.gold * 100).roundToInt()}%"
-    if (info.chancen.silber > 0.0) teile += "Silber ${(info.chancen.silber * 100).roundToInt()}%"
-    if (info.chancen.bronze > 0.0) teile += "Bronze ${(info.chancen.bronze * 100).roundToInt()}%"
-    if (info.chancen.gesamt > 0.0) teile += "Gesamt ${(info.chancen.gesamt * 100).roundToInt()}%"
-    if (teile.isEmpty()) return null
-    return teile.joinToString(" · ")
+/**
+ * PRO-Modus: Zeigt IMMER alle Prozentwerte, ohne Filter –
+ * auch 0% wird explizit angezeigt (vollständige Transparenz).
+ */
+private fun prozentZeile(info: ChancenInfo): String {
+    fun pct(wert: Double): Int = (wert * 100).roundToInt()
+    return "Gold ${pct(info.chancen.gold)}% · Silber ${pct(info.chancen.silber)}% · " +
+            "Bronze ${pct(info.chancen.bronze)}% · Gesamt ${pct(info.chancen.gesamt)}%"
 }
 
 /**
