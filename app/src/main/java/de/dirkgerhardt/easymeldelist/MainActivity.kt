@@ -4,25 +4,45 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import de.dirkgerhardt.easymeldelist.ui.SavedParticipantsScreen
+import de.dirkgerhardt.easymeldelist.ui.screens.BrandingScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.HomeScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.LibraryScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.ResultsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.SavedDetailScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.SettingsScreen
 import de.dirkgerhardt.easymeldelist.ui.screens.UploadWizardScreen
+import de.dirkgerhardt.easymeldelist.ui.theme.EasyMeldelistTheme
 
 class MainActivity : ComponentActivity() {
 
     private val vm: MeldelistViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
-        setContent { MeldelistNavGraph(vm) }
+
+        setContent {
+            EasyMeldelistTheme {
+                val showBranding = remember { mutableStateOf(true) }
+
+                if (showBranding.value) {
+                    BrandingScreen(onFinished = { showBranding.value = false })
+                } else {
+                    Surface {
+                        MeldelistNavGraph(vm)
+                    }
+                }
+            }
+        }
     }
 }
 
