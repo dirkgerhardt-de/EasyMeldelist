@@ -78,7 +78,7 @@ fun BrandingScreen(onFinished: () -> Unit) {
             text = "Melden · Mitmachen · Medaille!",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            color = Color(0xFF2C3E50),  // ← HIER geändert: garantierter Kontrast auf #86C7EB
             modifier = Modifier
                 .padding(top = 24.dp)
                 .alpha(textAlpha)

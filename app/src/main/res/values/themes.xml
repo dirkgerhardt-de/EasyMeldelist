@@ -4,7 +4,9 @@
     <style name="Theme.EasyMeldelist" parent="android:Theme.Material.Light.NoActionBar" />
     <style name="Theme.EasyMeldelist.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_blank</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_adaptive</item>
+        <!-- Icon-Hintergrund ebenfalls auf Splash-Blau: Kreis wird unsichtbar -->
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
         <item name="postSplashScreenTheme">@style/Theme.EasyMeldelist</item>
     </style>
 </resources>
